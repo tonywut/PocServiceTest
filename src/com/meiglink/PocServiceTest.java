@@ -21,18 +21,17 @@ public class PocServiceTest {
 	// localtime - NTPservicetime
 	public void getTimeOffset() {
 		long offsetCount = 0;
-		//String timeServerUrl = "104.225.159.46";
-		String timeServerUrl = "it158.xicp.net";
-		//String timeServerUrl = "192.168.1.99";
+		// String timeServerUrl = "104.225.159.46";
+		//String timeServerUrl = "it158.xicp.net";
+		// String timeServerUrl = "192.168.1.99";
+		String timeServerUrl = "127.0.0.1";
 		System.out.println("server:" + timeServerUrl);
 		for (int i = 0; i < 10; i++) {
 			try {
 				NTPUDPClient timeClient = new NTPUDPClient();
-				InetAddress timeServerAddress = InetAddress
-						.getByName(timeServerUrl);
+				InetAddress timeServerAddress = InetAddress.getByName(timeServerUrl);
 				TimeInfo timeInfo = timeClient.getTime(timeServerAddress);
-				TimeStamp timeStamp = timeInfo.getMessage()
-						.getTransmitTimeStamp();
+				TimeStamp timeStamp = timeInfo.getMessage().getTransmitTimeStamp();
 				Date date = timeStamp.getDate();
 				Date localdate = new Date();
 				offsetCount += localdate.getTime() - date.getTime();
@@ -51,10 +50,10 @@ public class PocServiceTest {
 			}
 		}
 		timeOffset = offsetCount / 10;
-		if(timeOffset == 0) {
+		if (timeOffset == 0) {
 			System.out.println("don't get timeoffset");
 		}
-		System.out.println("timeOffset:"+timeOffset);
+		System.out.println("timeOffset:" + timeOffset);
 	}
 
 	public void start() {
@@ -65,8 +64,7 @@ public class PocServiceTest {
 			System.out.println("port is opened, use 8888...");
 		} catch (BindException e) {
 			System.out.println("port is using...");
-			System.out
-					.println("please close some program and retart PocService!");
+			System.out.println("please close some program and retart PocService!");
 			System.exit(0);
 		} catch (IOException e) {
 			e.printStackTrace();
@@ -97,46 +95,28 @@ public class PocServiceTest {
 	class Client implements Runnable {
 
 		private Socket s;
-		private DataInputStream dis = null;
-		private DataOutputStream dos = null;
+		private ObjectInputStream dis = null;
+		private ObjectOutputStream dos = null;
 		private boolean bConnected = false;
 
 		public Client(Socket s) {
 			this.s = s;
 			try {
-				dis = new DataInputStream(s.getInputStream());
-				dos = new DataOutputStream(s.getOutputStream());
+				dos = new ObjectOutputStream(s.getOutputStream());
+				dis = new ObjectInputStream(new BufferedInputStream(s.getInputStream()));
 				bConnected = true;
 			} catch (IOException e) {
 				e.printStackTrace();
 			}
 		}
 
-		public void send(String str) {
-			try {
-				dos.writeChar('S');
-				dos.flush();
-				dos.writeUTF(str);
-				dos.flush();
-			} catch (IOException e) {
-				clients.remove(this);
-				System.out.println("client exit! remove this from List!");
-			}
-		}
-		
 		public void send(long sendStartTime, long sendEndTime, String str) {
-			try{
+			try {
 				System.out.println("start send...");
 				long recvStartTime = new Date().getTime() - timeOffset;
-				dos.writeChar('T');
-				dos.flush();
-				dos.writeLong(sendStartTime);
-				dos.flush();
-				dos.writeLong(sendEndTime);
-				dos.flush();
-				dos.writeLong(recvStartTime);
-				dos.flush();
-				dos.writeUTF(str);
+				MsgPackage outmsg = new MsgPackage(MsgPackage.MSG_RECVTIME, sendStartTime, sendEndTime, recvStartTime,
+						str);
+				dos.writeObject(outmsg);
 				dos.flush();
 				System.out.println("end send...");
 			} catch (IOException e) {
@@ -150,31 +130,31 @@ public class PocServiceTest {
 			// TODO Auto-generated method stub
 			try {
 				while (bConnected) {
-					char event = dis.readChar();
-					if (event == 'H') { // ������
-						String str = dis.readUTF();
-						System.out.println("------heart beat");
-					} else if (event == 'T'){ // ��ʱ���
-						long sendStartTime = dis.readLong();
-						String str = dis.readUTF();
+					MsgPackage msg = null;
+					Object obj = dis.readObject();
+					if (obj != null) {
+						msg = (MsgPackage) obj;
+					}
+					if (msg.getMsgType() == MsgPackage.MSG_HEARBEAT) {
+						System.out.println("-------heartbeat");
+					} else if (msg.getMsgType() == MsgPackage.MSG_SENDTIME) {
+						long sendStartTime = msg.getSendStartTime();
 						long sendEndTime = new Date().getTime() - timeOffset;
-						System.out.println("-----------sendStartTime:" + sendStartTime + " sendEndTime:" + sendEndTime +" " + str);
+						String str = msg.getStr();
+						System.out.println("-----------sendStartTime:" + sendStartTime + " sendEndTime:" + sendEndTime
+								+ " " + str);
 						for (int i = 0; i < clients.size(); i++) {
 							Client c = clients.get(i);
 							c.send(sendStartTime, sendEndTime, str);
-						}
-					} else {
-						String str = dis.readUTF();
-						System.out.println("-----------from serivce:" + str);
-						for (int i = 0; i < clients.size(); i++) {
-							Client c = clients.get(i);
-							c.send(str);
 						}
 					}
 				}
 			} catch (EOFException e) {
 				System.out.println("Client closed!");
 			} catch (IOException e) {
+				e.printStackTrace();
+			} catch (ClassNotFoundException e) {
+				// TODO Auto-generated catch block
 				e.printStackTrace();
 			} finally {
 				try {
@@ -189,6 +169,7 @@ public class PocServiceTest {
 					e.printStackTrace();
 				}
 			}
+
 		}
 
 	}
