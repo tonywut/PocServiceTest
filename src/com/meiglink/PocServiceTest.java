@@ -10,8 +10,11 @@ import org.apache.commons.net.ntp.TimeStamp;
 
 public class PocServiceTest {
 	boolean started = false;
+	boolean audioStarted = false;
 	ServerSocket ss = null;
+	ServerSocket audioSocket = null;
 	List<Client> clients = new ArrayList<Client>();
+	List<AudioClient> audioClients = new ArrayList<AudioClient>();
 	private long timeOffset = 0;
 
 	public static void main(String[] args) {
@@ -22,7 +25,7 @@ public class PocServiceTest {
 	public void getTimeOffset() {
 		long offsetCount = 0;
 		// String timeServerUrl = "104.225.159.46";
-		//String timeServerUrl = "it158.xicp.net";
+		// String timeServerUrl = "it158.xicp.net";
 		// String timeServerUrl = "192.168.1.99";
 		String timeServerUrl = "127.0.0.1";
 		System.out.println("server:" + timeServerUrl);
@@ -58,6 +61,10 @@ public class PocServiceTest {
 
 	public void start() {
 		getTimeOffset();
+		// 启动音频socket服务
+		Thread tAudioServerThread = new Thread(new AudioServerThread());
+		tAudioServerThread.start();
+		// 启动控制socket服务
 		try {
 			ss = new ServerSocket(8888);
 			started = true;
@@ -136,7 +143,7 @@ public class PocServiceTest {
 						msg = (MsgPackage) obj;
 					}
 					if (msg.getMsgType() == MsgPackage.MSG_HEARBEAT) {
-						System.out.println("-------heartbeat");
+						//System.out.println("-------heartbeat");
 					} else if (msg.getMsgType() == MsgPackage.MSG_SENDTIME) {
 						long sendStartTime = msg.getSendStartTime();
 						long sendEndTime = new Date().getTime() - timeOffset;
@@ -174,4 +181,98 @@ public class PocServiceTest {
 
 	}
 
+	private class AudioServerThread implements Runnable {
+		public void run() {
+			try {
+				audioSocket = new ServerSocket(8889);
+				audioStarted = true;
+				System.out.println("AudioServer port is opened, use 8889...");
+			} catch (BindException e) {
+				System.out.println("AudioServer port is using...");
+				System.out.println("please close some program and retart PocService!");
+				System.exit(0);
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+
+			try {
+				while (audioStarted) {
+					System.out.println("wait audio client");
+					Socket as;
+					as = audioSocket.accept();
+					System.out.println("some one connect");
+					AudioClient ac = new AudioClient(as);
+					System.out.println("a audio client connected!");
+					new Thread(ac).start();
+					audioClients.add(ac);
+				}
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+	}
+
+	class AudioClient implements Runnable {
+		private Socket s;
+		private DataInputStream dis = null;
+		private DataOutputStream dos = null;
+		private boolean bConnected = false;
+
+		public AudioClient(Socket s) {
+			this.s = s;
+			try {
+
+				dis = new DataInputStream(s.getInputStream());
+				dos = new DataOutputStream(s.getOutputStream());
+				bConnected = true;
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+
+		public void send(short audiodata) {
+			try {
+				dos.writeShort(audiodata);
+			} catch (IOException e) {
+				audioClients.remove(this);
+				System.out.println("audio client exit! remove this form List!");
+			}
+		}
+
+		@Override
+		public void run() {
+			// TODO Auto-generated method stub
+			try {
+				while (bConnected) {
+					short audiodata = dis.readShort();
+					for (int i = 0; i < audioClients.size(); i++) {
+						AudioClient c = audioClients.get(i);
+						//if (!c.equals(this)) {
+							c.send(audiodata);
+						//}
+					}
+				}
+			} catch (EOFException e) {
+				System.out.println("Client closed!");
+			} catch (IOException e) {
+				e.printStackTrace();
+			} finally {
+				try {
+					if (dis != null)
+						dis.close();
+					if (dos != null)
+						dos.close();
+					if (s != null) {
+						s.close();
+					}
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+
+		}
+
+	}
 }
