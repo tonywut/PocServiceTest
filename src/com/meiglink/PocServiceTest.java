@@ -249,9 +249,9 @@ public class PocServiceTest {
 					short audiodata = dis.readShort();
 					for (int i = 0; i < audioClients.size(); i++) {
 						AudioClient c = audioClients.get(i);
-						//if (!c.equals(this)) {
+						if (!c.equals(this)) {
 							c.send(audiodata);
-						//}
+						}
 					}
 				}
 			} catch (EOFException e) {
