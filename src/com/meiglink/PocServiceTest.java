@@ -234,6 +234,7 @@ public class PocServiceTest {
 
 		public void send(short audiodata) {
 			try {
+				System.out.println("sending...");
 				dos.writeShort(audiodata);
 			} catch (IOException e) {
 				audioClients.remove(this);
